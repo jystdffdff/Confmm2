@@ -1,0 +1,486 @@
+-- CONF HUB V3 PREMIUM (GİZLİ SÜRÜM - KESİNTİSİZ MOBİL MOTORU)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UIS = game:GetService("UserInputService")
+local lp = Players.LocalPlayer
+local cam = workspace.CurrentCamera
+
+-- Global Ayarlar
+local CONFIG = { bulletSpeed = 9999, predDelay = 0.01 }
+local shooting = false
+local oldPosition = nil
+local teleportingToGun = false
+local GLITCH_HIZI = 75
+local userIsJumping = false
+
+-- Menü Durumları
+local ESP_ON = false
+local AUTO_SHOOT_ON = false
+local GET_GUN_ON = false
+local SPEED_GLITCH_ON = false
+local LOCK_SHOOT_BTN = false -- Buton Sabitleme Durumu
+local ROTATION_SPEED = 180 
+
+local HL_TAG = "_CONF_HL"
+local BB_TAG = "_CONF_BB"
+local GROUND_GUN_TAG = "_CONF_GGUN"
+
+local COLOR_MASUM = Color3.fromRGB(50, 205, 50)
+local COLOR_KATIL = Color3.fromRGB(220, 40, 40)
+local COLOR_SERIF = Color3.fromRGB(40, 120, 255)
+
+local mobileShootGui = nil
+local btnFrame = nil
+local crosshairCenterFrame = nil 
+
+-- Rol Bulucu
+local function getPlayerRole(player)
+    if not player or not player.Character then return "Masum" end
+    local char = player.Character
+    if char:FindFirstChild("Knife") or char:FindFirstChild("Bıçak") then return "Katil" end
+    if char:FindFirstChild("Gun") or char:FindFirstChild("Silah") then return "Şerif" end
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        if backpack:FindFirstChild("Knife") or backpack:FindFirstChild("Bıçak") then return "Katil" end
+        if backpack:FindFirstChild("Gun") or backpack:FindFirstChild("Silah") then return "Şerif" end
+    end
+    return "Masum"
+end
+
+-- Gecikmesiz Yerden Silah Toplama Sistemi
+local function setupDroppedGun(obj)
+    if not obj or not GET_GUN_ON then return end
+    task.wait(0.02)
+    
+    local gunPart = nil
+    if obj.Name == "GunDrop" or obj.Name == "Normal" or obj.Name == "WeaponDrop" then
+        gunPart = obj:IsA("Part") and obj or (obj:FindFirstChild("Handle") or obj:FindFirstChild("GunDrop") or obj.PrimaryPart)
+    elseif obj:IsA("Model") and obj.Name:lower():find("gun") then
+        gunPart = obj:FindFirstChild("Handle") or obj:FindFirstChild("GunDrop") or obj.PrimaryPart
+    end
+
+    if gunPart and not gunPart:FindFirstChild(GROUND_GUN_TAG) then
+        local adorn = Instance.new("BoxHandleAdornment")
+        adorn.Name = GROUND_GUN_TAG
+        adorn.Size = gunPart.Size + Vector3.new(0.6, 0.6, 0.6)
+        adorn.AlwaysOnTop = true
+        adorn.ZIndex = 10
+        adorn.Color3 = Color3.fromRGB(0, 0, 0)
+        adorn.Transparency = 0.2
+        adorn.Adornee = gunPart
+        adorn.Parent = gunPart
+
+        local bb = Instance.new("BillboardGui", gunPart)
+        bb.Name = GROUND_GUN_TAG .. "BB"
+        bb.AlwaysOnTop = true
+        bb.Size = UDim2.new(0, 100, 0, 30)
+        bb.StudsOffset = Vector3.new(0, 2, 0)
+        
+        local lbl = Instance.new("TextLabel", bb)
+        lbl.Size = UDim2.new(1, 0, 1, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = "GUN"
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 16
+        lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+        if lp.Character and lp.Character:FindFirstChild("HumanoidRootPart") and not teleportingToGun then
+            teleportingToGun = true
+            local hrp = lp.Character.HumanoidRootPart
+            oldPosition = hrp.CFrame
+            
+            hrp.CFrame = gunPart.CFrame * CFrame.new(0, 1, 0)
+            task.wait(0.25)
+            
+            if oldPosition then hrp.CFrame = oldPosition oldPosition = nil end
+            task.wait(0.5)
+            teleportingToGun = false
+        end
+    end
+end
+
+workspace.ChildAdded:Connect(setupDroppedGun)
+
+-- Katil Bulucu
+local function findKiller()
+    local best, bestDist = nil, math.huge
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p == lp then continue end
+        if getPlayerRole(p) == "Katil" then
+            local char = p.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local dist = (char.HumanoidRootPart.Position - cam.CFrame.Position).Magnitude
+                if dist < bestDist then bestDist = dist best = p end
+            end
+        end
+    end
+    return best
+end
+
+-- Ateş Etme Motoru
+local function doShoot()
+    if shooting then return end
+    shooting = true
+    local char = lp.Character
+    local target = findKiller()
+    local gun = char and (char:FindFirstChild("Gun") or lp.Backpack:FindFirstChild("Gun"))
+    
+    if char and target and gun then
+        if gun.Parent == lp.Backpack then
+            char:FindFirstChildOfClass("Humanoid"):EquipTool(gun)
+            task.wait()
+        end
+        local shootRemote = gun:FindFirstChild("Shoot")
+        local tHrp = target.Character:FindFirstChild("HumanoidRootPart")
+        local myHrp = char:FindFirstChild("HumanoidRootPart")
+        
+        if shootRemote and tHrp and myHrp then
+            local targetPos = tHrp.Position + (tHrp.AssemblyLinearVelocity or Vector3.new()) * CONFIG.predDelay
+            myHrp.CFrame = CFrame.new(myHrp.Position, Vector3.new(targetPos.X, myHrp.Position.Y, targetPos.Z))
+            pcall(function()
+                shootRemote:FireServer(myHrp.CFrame * CFrame.new(0, 0.5, -1.5), CFrame.new(targetPos))
+            end)
+        end
+    end
+    task.wait(0.01)
+    shooting = false
+end
+
+-- Speed Glitch Altyapısı
+UIS.JumpRequest:Connect(function() if SPEED_GLITCH_ON then userIsJumping = true end end)
+RunService.Heartbeat:Connect(function()
+    if not SPEED_GLITCH_ON then return end
+    local char = lp.Character
+    if not char then return end
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not hrp then return end
+
+    local state = humanoid:GetState()
+    local isFalling = (state == Enum.HumanoidStateType.Jumping or state == Enum.HumanoidStateType.Freefall)
+
+    if userIsJumping and isFalling and humanoid.MoveDirection.Magnitude > 0 then
+        local direction = humanoid.MoveDirection
+        hrp.AssemblyLinearVelocity = Vector3.new(direction.X * GLITCH_HIZI, hrp.AssemblyLinearVelocity.Y, direction.Z * GLITCH_HIZI)
+    else
+        if state == Enum.HumanoidStateType.Landed then userIsJumping = false end
+    end
+end)
+
+-- %100 ÇALIŞAN AKILLI MOBİL SÜRÜKLEME MOTORU (YENİLENDİ)
+local function createMobileShootButton()
+    if mobileShootGui then mobileShootGui:Destroy() end
+    mobileShootGui = Instance.new("ScreenGui", lp.PlayerGui)
+    mobileShootGui.Name = "ConfShootGuiV3"
+    mobileShootGui.ResetOnSpawn = false
+
+    btnFrame = Instance.new("Frame", mobileShootGui)
+    btnFrame.Size = UDim2.new(0, 85, 0, 85)
+    btnFrame.Position = UDim2.new(0.75, 0, 0.4, 0)
+    btnFrame.BackgroundColor3 = Color3.fromRGB(18, 14, 28)
+    btnFrame.BorderSizePixel = 0
+    btnFrame.Active = true
+    Instance.new("UICorner", btnFrame).CornerRadius = UDim.new(0, 16)
+
+    crosshairCenterFrame = Instance.new("Frame", btnFrame)
+    crosshairCenterFrame.Size = UDim2.new(0, 2, 0, 2)
+    crosshairCenterFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    crosshairCenterFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    crosshairCenterFrame.BackgroundTransparency = 1
+
+    local lines = {"Top", "Bottom", "Left", "Right"}
+    local sizes = {Top = UDim2.new(0,3,0,16), Bottom = UDim2.new(0,3,0,16), Left = UDim2.new(0,16,0,3), Right = UDim2.new(0,16,0,3)}
+    local positions = {Top = UDim2.new(0.5,-1,0,-22), Bottom = UDim2.new(0.5,-1,0,6), Left = UDim2.new(0,-22,0.5,-1), Right = UDim2.new(0,6,0.5,-1)}
+    for _, dir in ipairs(lines) do
+        local l = Instance.new("Frame", crosshairCenterFrame)
+        l.Size = sizes[dir]
+        l.Position = positions[dir]
+        l.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        l.BorderSizePixel = 0
+    end
+
+    local clickBtn = Instance.new("TextButton", btnFrame)
+    clickBtn.Size = UDim2.new(1, 0, 1, 0)
+    clickBtn.BackgroundTransparency = 1
+    clickBtn.Text = ""
+    
+    -- Ateş etme basma tespiti
+    clickBtn.MouseButton1Click:Connect(function() 
+        task.spawn(doShoot) 
+    end)
+
+    -- Sürükleme için Gelişmiş Bağımsız input Yakalayıcı
+    local isDragging = false
+    local dragOffset = Vector2.new()
+
+    clickBtn.InputBegan:Connect(function(input)
+        if LOCK_SHOOT_BTN then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = true
+            local touchPosition = input.Position
+            dragOffset = Vector2.new(touchPosition.X - btnFrame.AbsolutePosition.X, touchPosition.Y - btnFrame.AbsolutePosition.Y)
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if isDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local currentTouchPosition = input.Position
+            -- Ekran sınırları içinde pürüzsüz taşıma hesabı
+            btnFrame.Position = UDim2.new(0, currentTouchPosition.X - dragOffset.X, 0, currentTouchPosition.Y - dragOffset.Y)
+        end
+    end)
+
+    UIS.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            isDragging = false
+        end
+    end)
+end
+
+RunService.RenderStepped:Connect(function(deltaTime)
+    if AUTO_SHOOT_ON and crosshairCenterFrame then
+        crosshairCenterFrame.Rotation = (crosshairCenterFrame.Rotation + (ROTATION_SPEED * deltaTime)) % 360
+    end
+end)
+
+-- Gecikmesiz Anlık ESP Motoru
+local function applyESP(player)
+    if player == lp or not ESP_ON then return end
+    local char = player.Character or player.CharacterAdded:Wait()
+    local hrp = char:WaitForChild("HumanoidRootPart", 5)
+    
+    if hrp then
+        local role = getPlayerRole(player)
+        local color = (role == "Katil" and COLOR_KATIL) or (role == "Şerif" and COLOR_SERIF) or COLOR_MASUM
+        local tagText = (role == "Katil" and "[KATİL]") or (role == "Şerif" and "[ŞERİF]") or "[MASUM]"
+
+        local hl = char:FindFirstChild(HL_TAG) or Instance.new("Highlight", char)
+        hl.Name = HL_TAG
+        hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        hl.FillTransparency = 1
+        hl.OutlineColor = color
+
+        local head = char:WaitForChild("Head", 5)
+        if head then
+            local bb = head:FindFirstChild(BB_TAG) or Instance.new("BillboardGui", head)
+            bb.Name = BB_TAG
+            bb.AlwaysOnTop = true
+            bb.Size = UDim2.new(0, 160, 0, 32)
+            bb.StudsOffset = Vector3.new(0, 3, 0)
+            local lbl = bb:FindFirstChild("TextLabel") or Instance.new("TextLabel", bb)
+            lbl.Size = UDim2.new(1, 0, 1, 0)
+            lbl.BackgroundTransparency = 1
+            lbl.Text = player.DisplayName .. "\n" .. tagText
+            lbl.Font = Enum.Font.GothamBold
+            lbl.TextSize = 11
+            lbl.TextColor3 = color
+        end
+    end
+end
+
+Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(function() task.wait(0.1) if ESP_ON then applyESP(p) end end) end)
+for _, p in ipairs(Players:GetPlayers()) do p.CharacterAdded:Connect(function() task.wait(0.1) if ESP_ON then applyESP(p) end end) end
+
+local function removeESP(character)
+    local hl = character:FindFirstChild(HL_TAG) if hl then hl:Destroy() end
+    local head = character:FindFirstChild("Head") if head then local bb = head:FindFirstChild(BB_TAG) if bb then bb:Destroy() end end
+end
+
+-- Arayüz Kurulumu
+if lp.PlayerGui:FindFirstChild("ConfPremiumHub") then lp.PlayerGui.ConfPremiumHub:Destroy() end
+local sg = Instance.new("ScreenGui", lp.PlayerGui)
+sg.Name = "ConfPremiumHub"
+sg.ResetOnSpawn = false
+
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 260, 0, 310)
+main.Position = UDim2.new(0.5, -130, 0.3, 0)
+main.BackgroundColor3 = Color3.fromRGB(12, 10, 18)
+main.BorderSizePixel = 0
+main.Active = true
+
+local outStroke = Instance.new("UIStroke", main)
+outStroke.Thickness = 2.5
+task.spawn(function() while task.wait() do outStroke.Color = Color3.fromHSV((tick() % 4) / 4, 0.8, 1) end end)
+
+local toggleBtn = Instance.new("TextButton", sg)
+toggleBtn.Size = UDim2.new(0, 95, 0, 38)
+toggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+toggleBtn.BackgroundColor3 = Color3.fromRGB(20, 16, 32)
+toggleBtn.Text = "Conf Hub"
+toggleBtn.Font = Enum.Font.GothamBold
+toggleBtn.TextSize = 12
+toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0, 10)
+local tStroke = Instance.new("UIStroke", toggleBtn)
+tStroke.Thickness = 1.5
+task.spawn(function() while task.wait() do tStroke.Color = Color3.fromHSV((tick() % 4) / 4, 0.8, 1) end end)
+toggleBtn.MouseButton1Click:Connect(function() main.Visible = not main.Visible end)
+
+local titleBar = Instance.new("Frame", main)
+titleBar.Size = UDim2.new(1, 0, 0, 45)
+titleBar.BackgroundTransparency = 1
+local titleTxt = Instance.new("TextLabel", titleBar)
+titleTxt.Size = UDim2.new(1, 0, 1, 0)
+titleTxt.BackgroundTransparency = 1
+titleTxt.Text = "CONF HUB"
+titleTxt.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleTxt.Font = Enum.Font.GothamBold
+titleTxt.TextSize = 14
+
+local function makeDraggable(obj, target)
+    local dragging, dragStart, startPos
+    obj.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true dragStart = i.Position startPos = target.Position end end)
+    UIS.InputChanged:Connect(function(i) if dragging and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then local d = i.Position - dragStart target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset+d.X, startPos.Y.Scale, startPos.Y.Offset+d.Y) end end)
+    UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end end)
+end
+makeDraggable(titleBar, main) makeDraggable(toggleBtn, toggleBtn)
+
+-- Toggle Eleman Oluşturucu
+local function addToggle(y, name, cb)
+    local row = Instance.new("Frame", main)
+    row.Size = UDim2.new(0.92, 0, 0, 36)
+    row.Position = UDim2.new(0.04, 0, 0, y)
+    row.BackgroundColor3 = Color3.fromRGB(22, 18, 32)
+    row.BorderSizePixel = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+    
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size = UDim2.new(1, -70, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = Color3.fromRGB(230, 225, 245)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local tBg = Instance.new("Frame", row)
+    tBg.Size = UDim2.new(0, 40, 0, 20)
+    tBg.Position = UDim2.new(1, -52, 0.5, -10)
+    tBg.BackgroundColor3 = Color3.fromRGB(45, 38, 62)
+    Instance.new("UICorner", tBg).CornerRadius = UDim.new(0, 10)
+    
+    local knob = Instance.new("Frame", tBg)
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.Position = UDim2.new(0, 3, 0.5, -7)
+    knob.BackgroundColor3 = Color3.fromRGB(150, 130, 190)
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+    
+    local btn = Instance.new("TextButton", tBg)
+    btn.Size = UDim2.new(1, 0, 1, 0)
+    btn.BackgroundTransparency = 1
+    btn.Text = ""
+    
+    local active = false
+    btn.MouseButton1Click:Connect(function()
+        active = not active
+        if active then
+            TweenService:Create(tBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(145, 60, 240)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.15), {Position = UDim2.new(1, -17, 0.5, -7), BackgroundColor3 = Color3.fromRGB(255, 255, 255)}):Play()
+        else
+            TweenService:Create(tBg, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(45, 38, 62)}):Play()
+            TweenService:Create(knob, TweenInfo.new(0.15), {Position = UDim2.new(0, 3, 0.5, -7), BackgroundColor3 = Color3.fromRGB(150, 130, 190)}):Play()
+        end
+        cb(active)
+    end)
+end
+
+-- Slider Eleman Oluşturucu
+local function addSlider(y, name, min, max, default, cb)
+    local row = Instance.new("Frame", main)
+    row.Size = UDim2.new(0.92, 0, 0, 36)
+    row.Position = UDim2.new(0.04, 0, 0, y)
+    row.BackgroundColor3 = Color3.fromRGB(22, 18, 32)
+    row.BorderSizePixel = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size = UDim2.new(0.4, 0, 1, 0)
+    lbl.Position = UDim2.new(0, 12, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = name
+    lbl.TextColor3 = Color3.fromRGB(230, 225, 245)
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextSize = 10
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+    local slideBg = Instance.new("Frame", row)
+    slideBg.Size = UDim2.new(0.5, -10, 0, 6)
+    slideBg.Position = UDim2.new(0.5, 0, 0.5, -3)
+    slideBg.BackgroundColor3 = Color3.fromRGB(45, 38, 62)
+    Instance.new("UICorner", slideBg)
+
+    local slideFill = Instance.new("Frame", slideBg)
+    slideFill.Size = UDim2.new((default-min)/(max-min), 0, 1, 0)
+    slideFill.BackgroundColor3 = Color3.fromRGB(145, 60, 240)
+    Instance.new("UICorner", slideFill)
+
+    local valLbl = Instance.new("TextLabel", row)
+    valLbl.Size = UDim2.new(0.1, 0, 1, 0)
+    valLbl.Position = UDim2.new(0.4, -5, 0, 0)
+    valLbl.BackgroundTransparency = 1
+    valLbl.Text = tostring(default)
+    valLbl.TextColor3 = Color3.fromRGB(150, 130, 190)
+    valLbl.Font = Enum.Font.GothamBold
+    valLbl.TextSize = 10
+
+    local sliderBtn = Instance.new("TextButton", slideBg)
+    sliderBtn.Size = UDim2.new(1, 0, 1, 0)
+    sliderBtn.BackgroundTransparency = 1
+    sliderBtn.Text = ""
+
+    local function updateSlider(input)
+        local percentage = math.clamp((input.Position.X - slideBg.AbsolutePosition.X) / slideBg.AbsoluteSize.X, 0, 1)
+        slideFill.Size = UDim2.new(percentage, 0, 1, 0)
+        local value = math.floor(min + (percentage * (max - min)))
+        valLbl.Text = tostring(value)
+        cb(value)
+    end
+
+    local sliding = false
+    sliderBtn.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then sliding = true updateSlider(input) end end)
+    UIS.InputChanged:Connect(function(input) if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then updateSlider(input) end end)
+    UIS.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then sliding = false end end)
+end
+
+-- Menü Dağılımları
+addToggle(45, "ESP", function(val)
+    ESP_ON = val
+    if val then
+        for _, p in ipairs(Players:GetPlayers()) do applyESP(p) end
+    else
+        for _, p in ipairs(Players:GetPlayers()) do if p.Character then removeESP(p.Character) end end
+    end
+end)
+
+addToggle(85, "Auto Shoot", function(val)
+    AUTO_SHOOT_ON = val
+    if val then createMobileShootButton() else if mobileShootGui then mobileShootGui:Destroy() end end
+end)
+
+addToggle(125, "Lock Shoot Button", function(val)
+    LOCK_SHOOT_BTN = val
+end)
+
+addSlider(165, "Crosshair Speed", 50, 500, 180, function(val)
+    ROTATION_SPEED = val
+end)
+
+addToggle(210, "Get Gun", function(val)
+    GET_GUN_ON = val
+    if not val then oldPosition = nil teleportingToGun = false end
+end)
+
+addToggle(250, "Speed Glitch", function(val)
+    SPEED_GLITCH_ON = val
+    if not val then userIsJumping = false end
+end)
+
+-- Karakter Yenilenme Dinleyicisi
+lp.CharacterAdded:Connect(function()
+    shooting = false oldPosition = nil teleportingToGun = false userIsJumping = false
+    task.wait(0.5)
+    if ESP_ON then for _, p in ipairs(Players:GetPlayers()) do applyESP(p) end end
+    if AUTO_SHOOT_ON then
